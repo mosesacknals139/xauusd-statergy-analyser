@@ -8,10 +8,14 @@ from mt5.market_data import get_data
 from indicators.rsi import add_rsi
 from indicators.ema import add_ema
 from indicators.atr import add_atr
+from strategy.order_blocks import detect_order_block
+from strategy.fvg import detect_fvg
 
 from strategy.breakout_analysis import analyze_breakout
 from strategy.session_filter import allowed_session
 from strategy.retest_strategy import retest_confirmation
+from strategy.market_structure import detect_market_structure
+from strategy.liquidity_sweep import detect_liquidity_sweep
 
 from telegram_bot.bot import send_telegram
 
@@ -50,7 +54,7 @@ while True:
             continue
 
         # --------------------------------
-        # GET DATA
+        # GET MARKET DATA
         # --------------------------------
         df = get_data(SYMBOL, ENTRY_TIMEFRAME)
 
@@ -78,12 +82,35 @@ while True:
         trend = analysis['trend']
 
         # --------------------------------
+        # MARKET STRUCTURE
+        # --------------------------------
+        structure = detect_market_structure(df)
+
+        bos = structure['bos']
+        choch = structure['choch']
+
+        # --------------------------------
+        # LIQUIDITY SWEEP
+        # --------------------------------
+        liquidity = detect_liquidity_sweep(df)
+        order_blocks = detect_order_block(df)
+
+        bullish_ob = order_blocks['bullish_ob']
+        bearish_ob = order_blocks['bearish_ob']
+
+        sweep = liquidity['sweep']
+        fvg = detect_fvg(df)
+
+        bullish_fvg = fvg['bullish_fvg']
+        bearish_fvg = fvg['bearish_fvg']
+
+        # --------------------------------
         # SEND MARKET PLAN
         # --------------------------------
         if not plan_sent:
 
             analysis_message = f"""
-📊 XAUUSD PROFESSIONAL TRADE PLAN
+📊 XAUUSD SMART MONEY PLAN
 
 💰 Current Price → {last_price:.2f}
 
@@ -92,7 +119,15 @@ while True:
 
 📈 Trend → {trend}
 
-⚠️ Waiting for professional retest setup
+📊 BOS → {bos}
+🔄 CHOCH → {choch}
+💧 Liquidity Sweep → {sweep}
+🏦 Bullish OB → {bullish_ob}
+🏦 Bearish OB → {bearish_ob}
+📦 Bullish FVG → {bullish_fvg}
+📦 Bearish FVG → {bearish_fvg}
+
+⚠️ Waiting for institutional setup
 """
 
             print(analysis_message)
@@ -117,40 +152,75 @@ while True:
         # --------------------------------
         if active_trade is None and signal:
 
-            atr = df.iloc[-1]['atr']
+            # --------------------------------
+            # SMART MONEY FILTERS
+            # --------------------------------
+            # --------------------------------
+            # INSTITUTIONAL FILTERS
+            # --------------------------------
 
-            # --------------------------------
-            # BUY TRADE
-            # --------------------------------
+            # BUY FILTER
             if signal == "BUY":
+                if (
+                    bos != "BULLISH"
+                    or sweep != "BUY"
+                    or bullish_ob is None
+                    or bullish_fvg is None
+                ):
 
-                entry = last_price
+                    signal = None
 
-                tp1 = entry + (atr * 1.5)
-                tp2 = entry + (atr * 3)
-                tp3 = entry + (atr * 5)
+                # SELL FILTER
+            elif signal == "SELL":
+                if (
+                    bos != "BEARISH"
+                    or sweep != "SELL"
+                    or bearish_ob is None
+                    or bearish_fvg is None
+                 
+                ):
 
-                sl = entry - (atr * 1.2)
+                    signal = None
+            # --------------------------------
+            # VALID SMART MONEY SETUP
+            # --------------------------------
+            if signal:
 
-                active_trade = {
-                    "side": "BUY",
-                    "entry": entry,
-                    "tp1": tp1,
-                    "tp2": tp2,
-                    "tp3": tp3,
-                    "sl": sl,
-                    "tp1_hit": False,
-                    "tp2_hit": False,
-                    "tp3_hit": False
-                }
+                atr = df.iloc[-1]['atr']
 
-                message = f"""
-🚨 XAUUSD BUY RETEST ENTRY 🚨
+                # --------------------------------
+                # BUY TRADE
+                # --------------------------------
+                if signal == "BUY":
+
+                    entry = last_price
+
+                    tp1 = entry + (atr * 1.5)
+                    tp2 = entry + (atr * 3)
+                    tp3 = entry + (atr * 5)
+
+                    sl = entry - (atr * 1.2)
+
+                    active_trade = {
+                        "side": "BUY",
+                        "entry": entry,
+                        "tp1": tp1,
+                        "tp2": tp2,
+                        "tp3": tp3,
+                        "sl": sl,
+                        "tp1_hit": False,
+                        "tp2_hit": False,
+                        "tp3_hit": False
+                    }
+
+                    message = f"""
+🚨 XAUUSD BUY SMART MONEY ENTRY 🚨
 
 🟢 BUY → {entry:.2f}
 
-✅ Resistance Retest Confirmed
-✅ Bullish Continuation
+✅ Bullish BOS Confirmed
+✅ Bullish Liquidity Sweep
+✅ Retest Confirmation
 ✅ Session Confirmed
 
 🎯 TP1 → {tp1:.2f}
@@ -161,45 +231,46 @@ while True:
 
 📈 Trend → {trend}
 
-🔥 Professional Retest Entry
+🔥 Institutional Buy Setup
 """
 
-                print(message)
+                    print(message)
 
-                send_telegram(message)
+                    send_telegram(message)
 
-            # --------------------------------
-            # SELL TRADE
-            # --------------------------------
-            elif signal == "SELL":
+                # --------------------------------
+                # SELL TRADE
+                # --------------------------------
+                elif signal == "SELL":
 
-                entry = last_price
+                    entry = last_price
 
-                tp1 = entry - (atr * 1.5)
-                tp2 = entry - (atr * 3)
-                tp3 = entry - (atr * 5)
+                    tp1 = entry - (atr * 1.5)
+                    tp2 = entry - (atr * 3)
+                    tp3 = entry - (atr * 5)
 
-                sl = entry + (atr * 1.2)
+                    sl = entry + (atr * 1.2)
 
-                active_trade = {
-                    "side": "SELL",
-                    "entry": entry,
-                    "tp1": tp1,
-                    "tp2": tp2,
-                    "tp3": tp3,
-                    "sl": sl,
-                    "tp1_hit": False,
-                    "tp2_hit": False,
-                    "tp3_hit": False
-                }
+                    active_trade = {
+                        "side": "SELL",
+                        "entry": entry,
+                        "tp1": tp1,
+                        "tp2": tp2,
+                        "tp3": tp3,
+                        "sl": sl,
+                        "tp1_hit": False,
+                        "tp2_hit": False,
+                        "tp3_hit": False
+                    }
 
-                message = f"""
-🚨 XAUUSD SELL RETEST ENTRY 🚨
+                    message = f"""
+🚨 XAUUSD SELL SMART MONEY ENTRY 🚨
 
 🔴 SELL → {entry:.2f}
 
-✅ Support Retest Confirmed
-✅ Bearish Continuation
+✅ Bearish BOS Confirmed
+✅ Bearish Liquidity Sweep
+✅ Retest Confirmation
 ✅ Session Confirmed
 
 🎯 TP1 → {tp1:.2f}
@@ -210,12 +281,12 @@ while True:
 
 📉 Trend → {trend}
 
-🔥 Professional Retest Entry
+🔥 Institutional Sell Setup
 """
 
-                print(message)
+                    print(message)
 
-                send_telegram(message)
+                    send_telegram(message)
 
         # --------------------------------
         # ACTIVE TRADE MANAGEMENT
@@ -262,7 +333,7 @@ while True:
                     active_trade = None
                     plan_sent = False
 
-                # SL
+                # STOP LOSS
                 if current_low <= active_trade["sl"]:
 
                     send_telegram("❌ BUY STOP LOSS HIT")
@@ -308,7 +379,7 @@ while True:
                     active_trade = None
                     plan_sent = False
 
-                # SL
+                # STOP LOSS
                 if current_high >= active_trade["sl"]:
 
                     send_telegram("❌ SELL STOP LOSS HIT")
@@ -320,8 +391,10 @@ while True:
         # DEBUG INFO
         # --------------------------------
         print("Current Price:", last_price)
-        print("High:", current_high)
-        print("Low:", current_low)
+        print("Trend:", trend)
+        print("BOS:", bos)
+        print("CHOCH:", choch)
+        print("Liquidity Sweep:", sweep)
 
     except Exception as e:
 
