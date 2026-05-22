@@ -1,42 +1,45 @@
 def detect_market_structure(df):
 
-    highs = df['high']
-    lows = df['low']
-
-    recent_high = highs.iloc[-2]
-    previous_high = highs.iloc[-5:-2].max()
-
-    recent_low = lows.iloc[-2]
-    previous_low = lows.iloc[-5:-2].min()
-
     bos = None
     choch = None
 
-    # Bullish BOS
-    if recent_high > previous_high:
+    highs = df['high']
+    lows = df['low']
+
+    recent_high = highs.iloc[-5:].max()
+    previous_high = highs.iloc[-10:-5].max()
+
+    recent_low = lows.iloc[-5:].min()
+    previous_low = lows.iloc[-10:-5].min()
+
+    current_close = df.iloc[-1]['close']
+
+    # --------------------------------
+    # BULLISH BOS
+    # --------------------------------
+    if current_close > previous_high:
+
         bos = "BULLISH"
 
-    # Bearish BOS
-    elif recent_low < previous_low:
+    # --------------------------------
+    # BEARISH BOS
+    # --------------------------------
+    elif current_close < previous_low:
+
         bos = "BEARISH"
 
-    # CHOCH Detection
-    last_close = df.iloc[-1]['close']
+    # --------------------------------
+    # CHOCH
+    # --------------------------------
+    if bos == "BULLISH":
 
-    ema50 = df.iloc[-1]['ema_50']
-    ema200 = df.iloc[-1]['ema_200']
-
-    # Bullish CHOCH
-    if ema50 < ema200 and recent_high > previous_high:
         choch = "BULLISH REVERSAL"
 
-    # Bearish CHOCH
-    elif ema50 > ema200 and recent_low < previous_low:
+    elif bos == "BEARISH":
+
         choch = "BEARISH REVERSAL"
 
     return {
         "bos": bos,
-        "choch": choch,
-        "recent_high": recent_high,
-        "recent_low": recent_low
+        "choch": choch
     }

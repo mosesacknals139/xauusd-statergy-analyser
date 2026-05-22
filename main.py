@@ -1,6 +1,7 @@
 import time
 
 from config.settings import *
+from strategy.higher_timeframe import get_higher_timeframe_bias
 
 from mt5.connect import connect_mt5
 from mt5.market_data import get_data
@@ -18,6 +19,7 @@ from strategy.market_structure import detect_market_structure
 from strategy.liquidity_sweep import detect_liquidity_sweep
 
 from telegram_bot.bot import send_telegram
+from strategy.ai_confidence import calculate_confidence
 
 # --------------------------------
 # CONNECT MT5
@@ -56,7 +58,21 @@ while True:
         # --------------------------------
         # GET MARKET DATA
         # --------------------------------
-        df = get_data(SYMBOL, ENTRY_TIMEFRAME)
+        # --------------------------------
+        # LOAD MULTIPLE TIMEFRAMES
+        # --------------------------------
+
+        h1_df = get_data(SYMBOL, H1_TIMEFRAME)
+
+        m15_df = get_data(SYMBOL, M15_TIMEFRAME)
+
+        m5_df = get_data(SYMBOL, M5_TIMEFRAME)
+
+        m1_df = get_data(SYMBOL, M1_TIMEFRAME)
+
+        # Main execution dataframe
+        df = m5_df
+        higher_bias = get_higher_timeframe_bias(SYMBOL)
 
         # --------------------------------
         # ADD INDICATORS
@@ -163,9 +179,9 @@ while True:
             if signal == "BUY":
                 if (
                     bos != "BULLISH"
-                    or sweep != "BUY"
                     or bullish_ob is None
                     or bullish_fvg is None
+                    or higher_bias != "BULLISH"
                 ):
 
                     signal = None
@@ -174,9 +190,9 @@ while True:
             elif signal == "SELL":
                 if (
                     bos != "BEARISH"
-                    or sweep != "SELL"
                     or bearish_ob is None
                     or bearish_fvg is None
+                    or higher_bias != "BEARISH"
                  
                 ):
 
@@ -187,6 +203,21 @@ while True:
             if signal:
 
                 atr = df.iloc[-1]['atr']
+                confidence = calculate_confidence(
+                    signal,
+                    bos,
+                    sweep,
+                    bullish_ob,
+                    bearish_ob, 
+                    bullish_fvg,
+                    bearish_fvg,
+                    trend
+                )
+                # Reject weak setups
+                if confidence < 70:
+                    print("Weak setup rejected")
+
+                    signal = None
 
                 # --------------------------------
                 # BUY TRADE
@@ -230,6 +261,9 @@ while True:
 🛑 SL → {sl:.2f}
 
 📈 Trend → {trend}
+📊 AI Confidence → {confidence}%
+
+
 
 🔥 Institutional Buy Setup
 """
