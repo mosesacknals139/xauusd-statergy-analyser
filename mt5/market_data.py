@@ -10,9 +10,15 @@ def get_data(symbol, timeframe, bars=200):
         "H1": mt5.TIMEFRAME_H1
     }
 
+    # Accept either a string key (e.g. "M5") or a numeric mt5.TIMEFRAME_* value
+    if isinstance(timeframe, str):
+        tf = tf_map[timeframe]
+    else:
+        tf = timeframe
+
     rates = mt5.copy_rates_from_pos(
         symbol,
-        tf_map[timeframe],
+        tf,
         0,
         bars
     )

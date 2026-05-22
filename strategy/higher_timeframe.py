@@ -1,13 +1,20 @@
+import MetaTrader5 as mt5
 from mt5.market_data import get_data
 from indicators.ema import add_ema
 
-import MetaTrader5 as mt5
+def get_higher_timeframe_bias(source):
 
-def get_higher_timeframe_bias(symbol):
+    if hasattr(source, "iloc"):
 
-    df = get_data(symbol, mt5.TIMEFRAME_M15)
+        df = source.copy()
 
-    df = add_ema(df)
+    else:
+
+        df = get_data(source, mt5.TIMEFRAME_H1)
+
+    if "ema_50" not in df.columns or "ema_200" not in df.columns:
+
+        df = add_ema(df)
 
     ema50 = df.iloc[-1]['ema_50']
     ema200 = df.iloc[-1]['ema_200']
