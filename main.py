@@ -18,6 +18,7 @@ from strategy.session_filter import allowed_session
 from strategy.retest_strategy import retest_confirmation
 from strategy.m1_entry import get_m1_sniper_entry
 from strategy.dynamic_targets import build_dynamic_trade_plan
+from strategy.market_regime import classify_market_regime, direction_allowed
 from strategy.premium_signal_formatter import (
     build_premium_setup_message,
     build_premium_watch_message,
@@ -50,6 +51,7 @@ send_telegram("🚀 XAUUSD AI BOT STARTED")
 active_trade = None
 plan_sent = False
 m1_watch_sent = False
+last_regime = None
 
 # --------------------------------
 # LIVE COMMENTARY SETTINGS
@@ -148,6 +150,17 @@ while True:
         bullish_fvg = fvg['bullish_fvg']
         bearish_fvg = fvg['bearish_fvg']
 
+        market_regime = classify_market_regime(
+            higher_bias=higher_bias,
+            m15_trend=trend,
+            bos=bos,
+            choch=choch,
+            sweep=sweep,
+            support=support,
+            resistance=resistance,
+            price=last_price,
+        )
+
         # --------------------------------
         # BUILD CURRENT STATE FOR LIVE COMMENTARY
         # --------------------------------
@@ -160,6 +173,7 @@ while True:
         current_state = {
             "symbol": SYMBOL,
             "timeframe_bias": higher_bias,
+            "market_regime": market_regime["regime"],
             "price": last_price,
             "reaction_zone": reaction_zone,
             "liquidity": sweep,
@@ -250,6 +264,10 @@ while True:
 
         print("Retest Signal:", signal)
 
+        if last_regime != market_regime["regime"]:
+            print("Market regime:", market_regime["regime"], "|", market_regime["summary"])
+            last_regime = market_regime["regime"]
+
         if signal is None:
 
             m1_watch_sent = False
@@ -266,7 +284,30 @@ while True:
             # INSTITUTIONAL FILTERS
             # --------------------------------
 
+            if market_regime["regime"].startswith("TRENDING_BEARISH") and signal == "BUY":
+                print("BUY blocked: bearish trending regime -> treat bullish reactions as pullbacks only")
+                signal = None
+
+            elif market_regime["regime"].startswith("TRENDING_BULLISH") and signal == "SELL":
+                print("SELL blocked: bullish trending regime -> treat bearish reactions as pullbacks only")
+                signal = None
+
+            elif market_regime["regime"] == "RANGE":
+                # In range conditions we only want fades from the extremes, not breakout chasing.
+                if signal == "BUY" and not (last_price <= support or sweep == "BUY"):
+                    print("BUY blocked: range regime requires support-side rejection or buy-side sweep")
+                    signal = None
+                elif signal == "SELL" and not (last_price >= resistance or sweep == "SELL"):
+                    print("SELL blocked: range regime requires resistance-side rejection or sell-side sweep")
+                    signal = None
+
             # BUY FILTER
+            if signal == "BUY":
+                allowed, regime_name = direction_allowed(market_regime, "BUY")
+                if not allowed:
+                    print(f"BUY blocked by regime filter: {regime_name}")
+                    signal = None
+
             if signal == "BUY":
                 if (
                     higher_bias != "BULLISH"
@@ -281,6 +322,12 @@ while True:
 
                 # SELL FILTER
             elif signal == "SELL":
+                allowed, regime_name = direction_allowed(market_regime, "SELL")
+                if not allowed:
+                    print(f"SELL blocked by regime filter: {regime_name}")
+                    signal = None
+
+            if signal == "SELL":
                 if (
                     higher_bias != "BEARISH"
                     or bos != "BEARISH"
